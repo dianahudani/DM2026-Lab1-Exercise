@@ -43,3 +43,34 @@ def test_build_dtm_and_term_frequency():
         assert term in term_freqs
         assert term_freqs[term] == expected_freq
     assert "result_id" in tf_res
+
+def test_dtm_heatmap_tool():
+    session = SessionState()
+    premade_tools, _ = load_workspace_tools("premade_tools", session)
+    load_dataset_tool = next(t for t in premade_tools if t.name == "load_dataset_tool")
+
+    # Load dataset & build DTM
+    load_dataset_tool.invoke({
+        "file_path": "agent_dev/sample_fixture.csv",
+        "text_column": "text",
+        "label_column": "label"
+    })
+
+    tools = make_tools(session)
+    build_dtm = next(t for t in tools if t.name == "build_dtm_tool")
+    dtm_heatmap = next(t for t in tools if t.name == "dtm_heatmap_tool")
+
+    build_dtm.invoke({})
+
+    # Test dtm_heatmap_tool with custom slice (n_terms=2, n_documents=3) against known answer #21
+    heatmap_res = dtm_heatmap.invoke({"n_terms": 2, "n_documents": 3})
+    assert heatmap_res["n_documents"] == 3
+    assert heatmap_res["n_terms"] == 2
+    assert heatmap_res["terms"] == ["alpha", "always"]
+    assert heatmap_res["matrix_slice"] == [
+        [3, 1],
+        [2, 1],
+        [1, 1]
+    ]
+    assert "result_id" in heatmap_res
+    assert session.pending_figure is not None

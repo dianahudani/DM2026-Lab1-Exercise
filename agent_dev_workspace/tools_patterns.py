@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 import tempfile
 import os
+from langchain_core.tools import tool
 
 def make_tools(session: SessionState):
     class MinePatternsTool:
@@ -158,4 +159,31 @@ def make_tools(session: SessionState):
             session.artifacts[artifact_key] = patterns_list
             return summary
 
-    return [MinePatternsTool()]
+    implementation = MinePatternsTool()
+
+    @tool
+    def mine_patterns_tool(
+        category_name: str,
+        filtering_method: str = "tfidf",
+        algorithm: str = "fpgrowth",
+        min_sup: int = 2,
+        k: int = 1,
+    ) -> dict:
+        """Mine frequent patterns for a category using a PAMI algorithm.
+
+        Args:
+            category_name: Category whose documents should be mined.
+            filtering_method: Vocabulary filter: "variance", "term_frequency", or "tfidf".
+            algorithm: Mining algorithm: "fpgrowth", "topk", or "maxfpgrowth".
+            min_sup: Minimum support for FPGrowth or MaxFPGrowth.
+            k: Number of patterns for TopK mining.
+        """
+        return implementation.invoke({
+            "category_name": category_name,
+            "filtering_method": filtering_method,
+            "algorithm": algorithm,
+            "min_sup": min_sup,
+            "k": k,
+        })
+
+    return [mine_patterns_tool]
