@@ -74,3 +74,120 @@ def test_reduce_dimensions_tool_pca(session_with_dtm):
     
     # Confirm plotting requirement: pending_figure is set
     assert session_with_dtm.pending_figure is not None
+
+def test_reduce_dimensions_tool_n_components_1(session_with_dtm):
+    reduction_tools = make_reduction_tools(session_with_dtm)
+    reduce_tool = next(t for t in reduction_tools if t.name == "reduce_dimensions_tool")
+    
+    res = reduce_tool.invoke({"method": "pca", "n_components": 1, "random_state": 42})
+    assert res["n_components"] == 1
+    assert res["shape"] == [8, 1]
+    
+    fig = session_with_dtm.pending_figure
+    assert fig is not None
+    ax = fig.axes[0]
+    assert ax.get_xlabel() == "Component 1"
+    assert ax.get_ylabel() == ""
+    assert "1D" in ax.get_title()
+    legend = ax.get_legend()
+    assert legend is not None
+    legend_texts = [t.get_text() for t in legend.get_texts()]
+    assert "catA" in legend_texts
+    assert "catB" in legend_texts
+
+def test_reduce_dimensions_tool_n_components_3(session_with_dtm):
+    reduction_tools = make_reduction_tools(session_with_dtm)
+    reduce_tool = next(t for t in reduction_tools if t.name == "reduce_dimensions_tool")
+    
+    res = reduce_tool.invoke({"method": "pca", "n_components": 3, "random_state": 42})
+    assert res["n_components"] == 3
+    assert res["shape"] == [8, 3]
+    
+    fig = session_with_dtm.pending_figure
+    assert fig is not None
+    ax = fig.axes[0]
+    assert ax.get_xlabel() == "Component 1"
+    assert ax.get_ylabel() == "Component 2"
+    assert "Components 1 & 2" in ax.get_title()
+    legend = ax.get_legend()
+    assert legend is not None
+    legend_texts = [t.get_text() for t in legend.get_texts()]
+    assert "catA" in legend_texts
+    assert "catB" in legend_texts
+
+def test_reduce_dimensions_plot_category_colors(session_with_dtm):
+    reduction_tools = make_reduction_tools(session_with_dtm)
+    reduce_tool = next(t for t in reduction_tools if t.name == "reduce_dimensions_tool")
+    
+    reduce_tool.invoke({"method": "pca", "n_components": 2, "random_state": 42})
+    fig = session_with_dtm.pending_figure
+    assert fig is not None
+    ax = fig.axes[0]
+    legend = ax.get_legend()
+    assert legend is not None
+    legend_texts = [t.get_text() for t in legend.get_texts()]
+    assert "catA" in legend_texts
+    assert "catB" in legend_texts
+
+def test_reduce_dimensions_tool_tsne(session_with_dtm):
+    reduction_tools = make_reduction_tools(session_with_dtm)
+    reduce_tool = next(t for t in reduction_tools if t.name == "reduce_dimensions_tool")
+    
+    res = reduce_tool.invoke({
+        "method": "tsne",
+        "n_components": 2,
+        "perplexity": 2,
+        "random_state": 42
+    })
+    
+    assert res["method"] == "tsne"
+    assert res["n_components"] == 2
+    assert res["shape"] == [8, 2]
+    
+    actual_coords = session_with_dtm.artifacts["reduced_tsne"]
+    assert actual_coords.shape == (8, 2)
+    
+    # Check against known answer #8 t-SNE Dim 1 and Dim 2 values with tolerance
+    expected_tsne = np.array([
+        [1330.9991, 32.1039],
+        [951.2459, 393.5588],
+        [530.8209, 682.9791],
+        [-1558.6448, -314.1625],
+        [-915.5153, -346.3907],
+        [-280.0313, -1261.2115],
+        [-280.0313, -1261.2115],
+        [-701.3674, 1465.3973]
+    ])
+    assert np.allclose(actual_coords, expected_tsne, atol=1e-3)
+    assert session_with_dtm.pending_figure is not None
+
+def test_reduce_dimensions_tool_umap(session_with_dtm):
+    reduction_tools = make_reduction_tools(session_with_dtm)
+    reduce_tool = next(t for t in reduction_tools if t.name == "reduce_dimensions_tool")
+    
+    res = reduce_tool.invoke({
+        "method": "umap",
+        "n_components": 2,
+        "n_neighbors": 3,
+        "random_state": 42
+    })
+    
+    assert res["method"] == "umap"
+    assert res["n_components"] == 2
+    assert res["shape"] == [8, 2]
+    
+    # Check against known answer #9 UMAP Dim 1 and Dim 2 values with tolerance
+    expected_umap = np.array([
+        [6.6811, -6.8218],
+        [6.9907, -7.2245],
+        [7.7022, -7.3712],
+        [10.2228, -6.2310],
+        [9.8759, -5.6537],
+        [9.3831, -6.5748],
+        [9.2153, -5.8297],
+        [8.5860, -7.2622]
+    ])
+    
+    actual_coords = session_with_dtm.artifacts["reduced_umap"]
+    assert np.allclose(actual_coords, expected_umap, atol=1e-3)
+    assert session_with_dtm.pending_figure is not None

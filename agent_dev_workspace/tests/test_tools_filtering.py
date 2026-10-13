@@ -25,8 +25,16 @@ def test_variance_filter_tool():
     filter_result = variance_filter_tool.invoke({"threshold": 0.15})
     
     assert "always" not in filter_result["kept_features"]
-    for term in ["alpha", "beta", "delta", "gamma"] :
+    for term in ["alpha", "beta", "delta", "gamma"]:
         assert term in filter_result["kept_features"]
+        
+    # Check full_report structure and sorting
+    var_record = session.results_store.get(filter_result["result_id"])
+    var_report = var_record.get("full_report") if var_record else None
+    assert var_report is not None
+    assert var_report.columns[0] == "term"
+    assert var_report.columns[1] == "variance"
+    assert var_report.iloc[:, 1].is_monotonic_decreasing
 
 def test_pearson_and_spearman_filter_tools():
     session = SessionState()
@@ -59,6 +67,15 @@ def test_pearson_and_spearman_filter_tools():
     
     assert pearson_report is not None
     assert spearman_report is not None
+    
+    # Assert report structure: column 0 is "term", column 1 is metric, sorted descending
+    assert pearson_report.columns[0] == "term"
+    assert pearson_report.columns[1] == "pearson_r"
+    assert pearson_report.iloc[:, 1].is_monotonic_decreasing
+    
+    assert spearman_report.columns[0] == "term"
+    assert spearman_report.columns[1] == "spearman_r"
+    assert spearman_report.iloc[:, 1].is_monotonic_decreasing
     
     # Check known answer 6 values from TEST_FIXTURE.md
     # Known answers:

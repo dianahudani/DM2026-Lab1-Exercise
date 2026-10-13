@@ -1,3 +1,4 @@
+from typing import Optional
 from agent_pipeline.session_state import SessionState
 import pandas as pd
 import numpy as np
@@ -15,8 +16,8 @@ def make_tools(session: SessionState):
             category_name = params.get("category_name")
             filtering_method = params.get("filtering_method", "tfidf")
             algorithm = params.get("algorithm", "fpgrowth")
-            min_sup = params.get("min_sup", 2)
-            k = params.get("k", 1)
+            min_sup = params.get("min_sup")
+            k = params.get("k")
             
             if session.dataframe is None:
                 raise ValueError("Dataset not loaded in session.")
@@ -24,14 +25,30 @@ def make_tools(session: SessionState):
                 raise ValueError("Category name column not found in session dataframe.")
             if not category_name:
                 raise ValueError("category_name must be specified.")
+            if algorithm in ("fpgrowth", "maxfpgrowth") and min_sup is None:
+                raise ValueError(f"min_sup is required for algorithm '{algorithm}'.")
+            if algorithm == "topk" and k is None:
+                raise ValueError(f"k is required for algorithm '{algorithm}'.")
+
+            def _early_return(note: str):
+                result_id = session.next_result_id("mine_patterns")
+                summary = {
+                    "result_id": result_id,
+                    "category_name": category_name,
+                    "filtering_method": filtering_method,
+                    "algorithm": algorithm,
+                    "patterns": [],
+                    "note": note
+                }
+                session.store_result("mine_patterns_tool", params, summary)
+                artifact_key = f"patterns_{category_name}_{filtering_method}_{algorithm}"
+                session.artifacts[artifact_key] = []
+                return summary
                 
             # 1. Filter dataframe and build fresh category-local DTM
             df_cat = session.dataframe[session.dataframe["category_name"] == category_name].copy()
             if df_cat.empty:
-                return {
-                    "patterns": [],
-                    "note": f"No documents found for category {category_name}"
-                }
+                return _early_return(f"No documents found for category {category_name}")
                 
             text_column = "text" if "text" in df_cat.columns else df_cat.columns[0]
             corpus = df_cat[text_column].fillna("").astype(str).tolist()
@@ -41,17 +58,11 @@ def make_tools(session: SessionState):
                 X_counts = vectorizer.fit_transform(corpus)
             except ValueError:
                 # Vocabulary is empty or all stop words
-                return {
-                    "patterns": [],
-                    "note": "no terms survived filtering"
-                }
+                return _early_return("no terms survived filtering")
                 
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:
-                return {
-                    "patterns": [],
-                    "note": "no terms survived filtering"
-                }
+                return _early_return("no terms survived filtering")
                 
             X_dense = X_counts.toarray()
             
@@ -86,19 +97,7 @@ def make_tools(session: SessionState):
                 
             # 3. Handle zero terms survived
             if not surviving_terms:
-                result_id = session.next_result_id("mine_patterns")
-                summary = {
-                    "result_id": result_id,
-                    "category_name": category_name,
-                    "filtering_method": filtering_method,
-                    "algorithm": algorithm,
-                    "patterns": [],
-                    "note": "no terms survived filtering"
-                }
-                session.store_result("mine_patterns_tool", params, summary)
-                artifact_key = f"patterns_{category_name}_{filtering_method}_{algorithm}"
-                session.artifacts[artifact_key] = []
-                return summary
+                return _early_return("no terms survived filtering")
                 
             # Filter X_dense and feature_names to surviving terms
             surviving_indices = [list(feature_names).index(t) for t in surviving_terms]
@@ -166,8 +165,8 @@ def make_tools(session: SessionState):
         category_name: str,
         filtering_method: str = "tfidf",
         algorithm: str = "fpgrowth",
-        min_sup: int = 2,
-        k: int = 1,
+        min_sup: Optional[int] = None,
+        k: Optional[int] = None,
     ) -> dict:
         """Mine frequent patterns for a category using a PAMI algorithm.
 
@@ -175,8 +174,8 @@ def make_tools(session: SessionState):
             category_name: Category whose documents should be mined.
             filtering_method: Vocabulary filter: "variance", "term_frequency", or "tfidf".
             algorithm: Mining algorithm: "fpgrowth", "topk", or "maxfpgrowth".
-            min_sup: Minimum support for FPGrowth or MaxFPGrowth.
-            k: Number of patterns for TopK mining.
+            min_sup: Minimum support count. Required if algorithm is "fpgrowth" or "maxfpgrowth".
+            k: Number of highest-support patterns to keep. Required if algorithm is "topk".
         """
         return implementation.invoke({
             "category_name": category_name,

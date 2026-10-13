@@ -14,15 +14,20 @@ def make_tools(session):
     def reduce_dimensions_tool(
         method: str = "pca",
         n_components: int = 2,
+        perplexity: float = 30.0,
+        n_neighbors: int = 15,
         random_state: int = 42
     ) -> dict:
-        """Reduces the dimensionality of the document-term matrix using PCA, Truncated SVD, or t-SNE,
+        """Reduces the dimensionality of the document-term matrix using PCA, Truncated SVD, t-SNE, or UMAP,
         stores the reduced coordinates in session.artifacts, and generates a scatter plot colored by category
-        set on session.pending_figure.
+        set on session.pending_figure. When n_components=1, plots 1D coordinates along Component 1 with y=0.
+        When n_components > 2, the scatter plot visualizes the first two components (Component 1 vs Component 2).
 
         Args:
-            method (str): Dimensionality reduction technique to use ("pca", "svd", or "tsne"). Default is "pca".
+            method (str): Dimensionality reduction technique to use ("pca", "svd", "tsne", or "umap"). Default is "pca".
             n_components (int): Number of dimensions to reduce to. Default is 2.
+            perplexity (float): Perplexity parameter for t-SNE. Default is 30.0.
+            n_neighbors (int): Number of neighbors parameter for UMAP. Default is 15.
             random_state (int): Random seed for reproducibility. Default is 42.
 
         Returns:
@@ -54,11 +59,19 @@ def make_tools(session):
                 explained_variance = explained_variance.tolist()
         elif method_lower == "tsne":
             # t-SNE doesn't have an explained_variance_ratio_
-            reducer = TSNE(n_components=n_components, random_state=random_state, init="pca", learning_rate="auto")
+            reducer = TSNE(n_components=n_components, perplexity=perplexity, random_state=random_state)
+            reduced_coords = reducer.fit_transform(X_dense)
+            explained_variance = None
+        elif method_lower == "umap":
+            try:
+                import umap
+            except ImportError:
+                return {"error": "umap-learn is not installed."}
+            reducer = umap.UMAP(n_components=n_components, n_neighbors=n_neighbors, random_state=random_state)
             reduced_coords = reducer.fit_transform(X_dense)
             explained_variance = None
         else:
-            return {"error": f"Unknown reduction method: {method}. Choose from 'pca', 'svd', or 'tsne'."}
+            return {"error": f"Unknown reduction method: {method}. Choose from 'pca', 'svd', 'tsne', or 'umap'."}
 
         # Store reduced coordinates in artifacts
         artifact_key = f"reduced_{method_lower}"
@@ -75,17 +88,34 @@ def make_tools(session):
         else:
             labels = np.zeros(reduced_coords.shape[0])
 
-        sns.scatterplot(
-            x=reduced_coords[:, 0],
-            y=reduced_coords[:, 1],
-            hue=labels,
-            palette="Set1",
-            ax=ax,
-            legend="full"
-        )
-        ax.set_title(f"Dimensionality Reduction ({method.upper()})")
-        ax.set_xlabel("Component 1")
-        ax.set_ylabel("Component 2")
+        if n_components == 1:
+            y_coords = np.zeros(reduced_coords.shape[0])
+            sns.scatterplot(
+                x=reduced_coords[:, 0],
+                y=y_coords,
+                hue=labels,
+                palette="Set1",
+                ax=ax,
+                legend="full"
+            )
+            ax.set_title(f"Dimensionality Reduction ({method.upper()} 1D)")
+            ax.set_xlabel("Component 1")
+            ax.set_ylabel("")
+            ax.set_yticks([])
+        else:
+            sns.scatterplot(
+                x=reduced_coords[:, 0],
+                y=reduced_coords[:, 1],
+                hue=labels,
+                palette="Set1",
+                ax=ax,
+                legend="full"
+            )
+            title_suffix = " (Components 1 & 2)" if n_components > 2 else ""
+            ax.set_title(f"Dimensionality Reduction ({method.upper()}){title_suffix}")
+            ax.set_xlabel("Component 1")
+            ax.set_ylabel("Component 2")
+
         plt.legend(title="Category", bbox_to_anchor=(1.05, 1), loc="upper left")
         plt.tight_layout()
 
@@ -103,6 +133,8 @@ def make_tools(session):
         params_dict = {
             "method": method,
             "n_components": n_components,
+            "perplexity": perplexity,
+            "n_neighbors": n_neighbors,
             "random_state": random_state
         }
         full_report = pd.DataFrame(reduced_coords)
@@ -111,13 +143,13 @@ def make_tools(session):
 
     @tool
     def binarize_labels_tool(
-        target_column: str = "category_name"
+        target_column: str = "label"
     ) -> dict:
         """One-hot encodes the categorical labels from the working dataframe,
         storing the resulting binary label matrix in session.artifacts["binary_labels"].
 
         Args:
-            target_column (str): Name of the column in session.dataframe to binarize. Default is "category_name".
+            target_column (str): Name of the column in session.dataframe to binarize. Default is "label".
 
         Returns:
             dict: Summary containing result_id, target_column, unique_classes, and shape of the binary label matrix.
@@ -126,7 +158,12 @@ def make_tools(session):
             return {"error": "No dataframe found. Load dataset first."}
         
         if target_column not in session.dataframe.columns:
-            return {"error": f"Column '{target_column}' not found in dataframe."}
+            if "category_name" in session.dataframe.columns:
+                target_column = "category_name"
+            elif "category" in session.dataframe.columns:
+                target_column = "category"
+            else:
+                return {"error": f"Column '{target_column}' not found in dataframe."}
 
         series = session.dataframe[target_column]
         dummies = pd.get_dummies(series, prefix=target_column)

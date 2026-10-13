@@ -7,7 +7,11 @@ from langchain_core.tools import tool
 def make_tools(session: SessionState):
     @tool
     def variance_filter_tool(threshold: float = 0.0) -> dict:
-        """Filter out features whose variance is below the given threshold."""
+        """Filter out features whose variance is below the given threshold.
+
+        Args:
+            threshold: Minimum variance threshold to keep a feature.
+        """
         X = session.feature_matrix
         feature_names = session.feature_names
 
@@ -17,12 +21,17 @@ def make_tools(session: SessionState):
                 "Load the dataset, then run build_dtm_tool before variance_filter_tool."
             )
 
-        variances = np.var(X, axis=0, ddof=0)
+        if hasattr(X, "toarray"):
+            X_dense = X.toarray()
+            variances = np.var(X_dense, axis=0, ddof=0)
+        else:
+            variances = np.var(np.asarray(X), axis=0, ddof=0)
+        variances = np.asarray(variances).ravel()
+
         variances_dict = {feat: float(var) for feat, var in zip(feature_names, variances)}
         kept_features = [feat for feat, var in variances_dict.items() if var >= threshold]
         kept_indices = [feature_names.index(feat) for feat in kept_features]
-        if X.ndim == 2:
-            session.feature_matrix = X[:, kept_indices]
+        session.feature_matrix = X[:, kept_indices]
         session.feature_names = kept_features
 
         df_report = pd.DataFrame({
@@ -41,7 +50,12 @@ def make_tools(session: SessionState):
 
     @tool
     def pearson_filter_tool(target_class: str = "", threshold: float = 0.0) -> dict:
-        """Compute Pearson correlation between term counts and a target class."""
+        """Compute Pearson correlation between term counts and a target class.
+
+        Args:
+            target_class: Class label to correlate against (defaults to first category).
+            threshold: Minimum absolute correlation required to keep a feature.
+        """
         if session.feature_matrix is None or session.feature_names is None:
             raise ValueError("Feature matrix not found in session. Build DTM first.")
         if session.dataframe is None or "category_name" not in session.dataframe.columns:
@@ -57,6 +71,11 @@ def make_tools(session: SessionState):
         corrs = []
         for col_idx in range(X.shape[1]):
             col_data = X[:, col_idx]
+            if hasattr(col_data, "toarray"):
+                col_data = col_data.toarray().ravel()
+            else:
+                col_data = np.asarray(col_data).ravel()
+
             if np.std(col_data) == 0 or np.std(y) == 0:
                 r = 0.0
             else:
@@ -90,7 +109,12 @@ def make_tools(session: SessionState):
 
     @tool
     def spearman_filter_tool(target_class: str = "", threshold: float = 0.0) -> dict:
-        """Compute Spearman rank correlation between term counts and a target class."""
+        """Compute Spearman rank correlation between term counts and a target class.
+
+        Args:
+            target_class: Class label to correlate against (defaults to first category).
+            threshold: Minimum absolute correlation required to keep a feature.
+        """
         if session.feature_matrix is None or session.feature_names is None:
             raise ValueError("Feature matrix not found in session. Build DTM first.")
         if session.dataframe is None or "category_name" not in session.dataframe.columns:
@@ -106,6 +130,11 @@ def make_tools(session: SessionState):
         corrs = []
         for col_idx in range(X.shape[1]):
             col_data = X[:, col_idx]
+            if hasattr(col_data, "toarray"):
+                col_data = col_data.toarray().ravel()
+            else:
+                col_data = np.asarray(col_data).ravel()
+
             if np.std(col_data) == 0 or np.std(y) == 0:
                 r = 0.0
             else:

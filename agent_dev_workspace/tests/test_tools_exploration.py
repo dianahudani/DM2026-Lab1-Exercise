@@ -50,13 +50,21 @@ def test_cosine_similarity_and_correlation():
     matrix = res_corr["correlation_matrix"]
     terms = res_corr["terms"]
     
-    # All 5 terms should be present
-    assert set(terms) == {"alpha", "always", "beta", "delta", "gamma"}
+    # Terms in descending variance order per Known Answer #19
+    expected_terms = ["alpha", "gamma", "delta", "beta", "always"]
+    assert terms == expected_terms
     
-    # Diagonal should be 1.0
-    for term in terms:
-        assert matrix[term][term] == pytest.approx(1.0, abs=1e-3)
-        
-    # Check specific strong correlation pairs: alpha/beta (~0.8885) and gamma/delta (~0.8307)
-    assert matrix["alpha"]["beta"] == pytest.approx(0.8885, abs=1e-3)
-    assert matrix["gamma"]["delta"] == pytest.approx(0.8307, abs=1e-3)
+    # Verify all entries in 5x5 correlation matrix against Known Answer #19
+    expected_corr = {
+        "alpha": {"alpha": 1.0000, "gamma": -0.5718, "delta": -0.6882, "beta": 0.8885, "always": 0.2601},
+        "gamma": {"alpha": -0.5718, "gamma": 1.0000, "delta": 0.8307, "beta": -0.6435, "always": 0.3140},
+        "delta": {"alpha": -0.6882, "gamma": 0.8307, "delta": 1.0000, "beta": -0.7746, "always": 0.3780},
+        "beta": {"alpha": 0.8885, "gamma": -0.6435, "delta": -0.7746, "beta": 1.0000, "always": 0.2928},
+        "always": {"alpha": 0.2601, "gamma": 0.3140, "delta": 0.3780, "beta": 0.2928, "always": 1.0000},
+    }
+    for t1 in expected_terms:
+        for t2 in expected_terms:
+            assert matrix[t1][t2] == pytest.approx(expected_corr[t1][t2], abs=1e-3)
+
+    # Check that pending_figure is set to the correlation heatmap
+    assert session.pending_figure is not None

@@ -7,6 +7,22 @@ import matplotlib.pyplot as plt
 from langchain_core.tools import tool
 
 def make_tools(session):
+    def _invalidate_derived_state():
+        session.feature_matrix = None
+        session.feature_names = None
+        session.labels = None
+        session.categories = []
+        session.pending_figure = None
+        session.artifacts.pop("count_vectorizer", None)
+        for key in list(session.artifacts.keys()):
+            if (
+                key == "tokens"
+                or key.startswith("binary_labels")
+                or key.startswith("reduced_")
+                or key.startswith("patterns_")
+            ):
+                session.artifacts.pop(key, None)
+
     @tool
     def tokenize_tool() -> dict:
         """Tokenizes each document's text into unigrams using nltk.word_tokenize.
@@ -113,8 +129,11 @@ def make_tools(session):
     def check_duplicates_tool(drop: bool = False) -> dict:
         """Checks for and optionally drops duplicate documents in the working DataFrame.
 
+        duplicate_count reflects the total number of rows involved in duplicate
+        groups (identified via keep=False), matching the drop behavior.
+
         Args:
-            drop: If True, drops duplicate documents using keep=False.
+            drop: If True, drops all rows involved in duplicate groups using keep=False.
         """
         if session.dataframe is None or "text" not in session.dataframe.columns:
             return {"error": "Dataset not loaded or 'text' column missing."}
@@ -128,6 +147,7 @@ def make_tools(session):
             initial_len = len(df)
             df.drop_duplicates(subset=["text"], keep=False, inplace=True)
             dropped_count = initial_len - len(df)
+            _invalidate_derived_state()
 
         summary = {
             "result_id": session.next_result_id("check_duplicates"),
@@ -153,6 +173,8 @@ def make_tools(session):
         df = session.dataframe
         sample_n = min(n, len(df))
         sampled_df = df.sample(n=sample_n, random_state=random_state)
+        session.dataframe = sampled_df
+        _invalidate_derived_state()
         sampled_indices = sampled_df.index.tolist()
 
         summary = {
@@ -193,8 +215,8 @@ def make_tools(session):
 
         summary = {
             "result_id": session.next_result_id("describe_data"),
-            "overall": {k: round(v, 4) for k, v in overall_desc.items()},
-            "per_category": {cat: {k: round(v, 4) for k, v in stats.items()} for cat, stats in per_category.items()}
+            "overall": {k: round(v, 4) for k, v in overall_desc.items() if isinstance(v, (int, float))},
+            "per_category": {cat: {k: round(v, 4) for k, v in stats.items() if isinstance(v, (int, float))} for cat, stats in per_category.items()}
         }
         session.store_result("describe_data_tool", {}, summary, full_report=df)
         return summary
