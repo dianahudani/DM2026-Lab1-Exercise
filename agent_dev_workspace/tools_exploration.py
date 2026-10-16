@@ -70,8 +70,20 @@ def make_tools(session):
         corr_df = df[top_terms].corr()
 
         # Build heatmap and set on session.pending_figure
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(corr_df, annot=True, fmt=".4f", cmap="coolwarm", vmin=-1, vmax=1, ax=ax)
+        fig, ax = plt.subplots(figsize=(14, 14))
+        sns.heatmap(
+            corr_df,
+            annot=True,
+            fmt=".2f",
+            annot_kws={"size": 6},
+            square=True,
+            linewidths=0.5,
+            cmap="coolwarm",
+            vmin=-1,
+            vmax=1,
+            ax=ax,
+        )
+        ax.tick_params(axis="x", rotation=90)
         ax.set_title("Feature Correlation Matrix (Top Terms by Variance)")
         plt.tight_layout()
         session.pending_figure = fig
